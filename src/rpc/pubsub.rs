@@ -31,7 +31,7 @@ impl PubsubServerImpl {
                         .get_block_by_number(current_block.0.into(), false)
                         .await
                         .unwrap();
-                    block_sub_tx2.send(header).unwrap();
+                    let _ = block_sub_tx2.send(header);
                 } else {
                     let _ = sync_sub_tx2.send(SyncStatus::Syncing {
                         highest_block: highest_block.0.into(),
