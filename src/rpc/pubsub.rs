@@ -19,6 +19,13 @@ impl PubsubServerImpl {
     ) {
         let sync_sub_tx2 = self.sync_sub_tx.clone();
         let block_sub_tx2 = self.block_sub_tx.clone();
+        let block_sub_tx3 = block_sub_tx2.clone();
+        tokio::spawn(async move {
+            let mut stream = BroadcastStream::new(block_sub_tx3.subscribe());
+            while let Some(block) = stream.next().await {
+                println!("{:?}", block);
+            }
+        });
         tokio::spawn(async move {
             while staged_sync_rx.changed().await.is_ok() {
                 let status = staged_sync_rx.borrow().clone();
