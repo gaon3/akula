@@ -4,6 +4,7 @@ pub mod eth;
 pub mod net;
 pub mod otterscan;
 pub mod parity;
+pub mod pubsub;
 pub mod trace;
 pub mod web3;
 

@@ -1,9 +1,11 @@
 use crate::{models::*, stagedsync::StagedSyncStatus};
 use async_trait::async_trait;
-use ethereum_jsonrpc::{types, EthApiServer, EthSubscriptionKind, PubsubApiServer, SyncStatus};
+use ethereum_jsonrpc::{
+    types, EthApiServer, EthSubscriptionKind, EthSubscriptionResult, PubsubApiServer, SyncStatus,
+};
 use jsonrpsee::{core::error::SubscriptionClosed, types::SubscriptionResult, SubscriptionSink};
 use tokio::sync::{broadcast, mpsc};
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
 pub struct PubsubServerImpl {
     pub sync_sub_tx: broadcast::Sender<SyncStatus>,
@@ -46,10 +48,11 @@ impl PubsubServerImpl {
 impl PubsubApiServer for PubsubServerImpl {
     fn sub(&self, mut sink: SubscriptionSink, kind: EthSubscriptionKind) -> SubscriptionResult {
         match kind {
-            EthSubscriptionKind::Sync => {
-                let rx = BroadcastStream::new(self.sync_sub_tx.clone().subscribe());
+            EthSubscriptionKind::Syncing => {
+                let stream = BroadcastStream::new(self.sync_sub_tx.clone().subscribe())
+                    .map(|status| status.map(|status| EthSubscriptionResult::Syncing(status)));
                 tokio::spawn(async move {
-                    match sink.pipe_from_try_stream(rx).await {
+                    match sink.pipe_from_try_stream(stream).await {
                         SubscriptionClosed::Success => {
                             sink.close(SubscriptionClosed::Success);
                         }
@@ -60,10 +63,11 @@ impl PubsubApiServer for PubsubServerImpl {
                     }
                 });
             }
-            EthSubscriptionKind::Block => {
-                let rx = BroadcastStream::new(self.block_sub_tx.clone().subscribe());
+            EthSubscriptionKind::NewHeads => {
+                let stream = BroadcastStream::new(self.block_sub_tx.clone().subscribe())
+                    .map(|block| block.map(|block| EthSubscriptionResult::NewHeads(block)));
                 tokio::spawn(async move {
-                    match sink.pipe_from_try_stream(rx).await {
+                    match sink.pipe_from_try_stream(stream).await {
                         SubscriptionClosed::Success => {
                             sink.close(SubscriptionClosed::Success);
                         }

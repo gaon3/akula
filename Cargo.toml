@@ -46,9 +46,7 @@ ethereum-interfaces = { git = "https://github.com/ledgerwatch/interfaces", featu
   "web3",
 ] }
 ethereum-types = { version = "0.14", features = ["codec"] }
-ethereum-jsonrpc = { git = "https://github.com/vorot93/ethereum-jsonrpc", features = [
-  "server",
-] }
+ethereum-jsonrpc = { path = "../ethereum-jsonrpc", features = ["server"] }
 ethnum = { version = "1", features = ["eio", "llvm-intrinsics", "rlp"] }
 fastrlp = { version = "0.2", features = [
   "derive",

@@ -8,7 +8,7 @@ use akula::{
     rpc::{
         debug::DebugApiServerImpl, erigon::ErigonApiServerImpl, eth::EthApiServerImpl,
         net::NetApiServerImpl, otterscan::OtterscanApiServerImpl, parity::ParityApiServerImpl,
-        trace::TraceApiServerImpl, web3::Web3ApiServerImpl,
+        pubsub::PubsubServerImpl, trace::TraceApiServerImpl, web3::Web3ApiServerImpl,
     },
     stagedsync,
     stages::*,
@@ -18,9 +18,10 @@ use anyhow::Context;
 use clap::Parser;
 use ethereum_jsonrpc::{
     ErigonApiServer, EthApiServer, NetApiServer, OtterscanApiServer, ParityApiServer,
-    TraceApiServer, Web3ApiServer,
+    PubsubApiServer, TraceApiServer, Web3ApiServer,
 };
 use expanded_pathbuf::ExpandedPathBuf;
+use futures::future::BoxFuture;
 use http::Uri;
 use jsonrpsee::{
     core::server::rpc_module::Methods, http_server::HttpServerBuilder, ws_server::WsServerBuilder,
@@ -29,7 +30,10 @@ use std::{
     collections::HashSet, fs::OpenOptions, future::pending, io::Write, net::SocketAddr, panic,
     sync::Arc, time::Duration,
 };
-use tokio::time::sleep;
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::sleep,
+};
 use tracing::*;
 use tracing_subscriber::prelude::*;
 
@@ -222,6 +226,13 @@ fn main() -> anyhow::Result<()> {
 
                 let chain_config = ChainConfig::from(chainspec);
 
+                // Send StagedSyncStatus in callback to EthApiServer
+                let (staged_sync_tx, staged_sync_rx) = mpsc::channel(20);
+                // Send SyncStatus to subscribers
+                let (sync_sub_tx, _) = broadcast::channel(100);
+                // Send Block to subscribers
+                let (block_sub_tx, _) = broadcast::channel(100);
+
                 if !opt.no_rpc {
                     tokio::spawn({
                         let db = db.clone();
@@ -257,6 +268,20 @@ fn main() -> anyhow::Result<()> {
                                     .into_rpc(),
                                 )
                                 .unwrap();
+                            }
+                            if api_options.is_empty() || api_options.contains("subscriptions") {
+                                let pubsub_server = PubsubServerImpl {
+                                    sync_sub_tx,
+                                    block_sub_tx,
+                                };
+                                pubsub_server.run(
+                                    staged_sync_rx,
+                                    EthApiServerImpl {
+                                        db: db.clone(),
+                                        call_gas_limit: 0,
+                                    },
+                                );
+                                api.merge(pubsub_server.into_rpc()).unwrap();
                             }
 
                             if api_options.is_empty() || api_options.contains("net") {
@@ -371,6 +396,13 @@ fn main() -> anyhow::Result<()> {
                     staged_sync
                         .set_delay_after_sync(Some(Duration::from_millis(opt.delay_after_sync)));
                 }
+
+                let transmitter_callback =
+                    move |sync_status: stagedsync::StagedSyncStatus| -> BoxFuture<'static, ()> {
+                        staged_sync_tx.blocking_send(sync_status).unwrap();
+                        Box::pin(async { () })
+                    };
+                staged_sync.set_post_cycle_callback(transmitter_callback);
 
                 let sentries = if let Some(raw_str) = opt.sentry_api_addr {
                     raw_str
