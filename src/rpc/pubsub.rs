@@ -14,7 +14,7 @@ pub struct PubsubServerImpl {
 impl PubsubServerImpl {
     pub fn run<API: EthApiServer>(
         &self,
-        mut staged_sync_rx: mpsc::Receiver<StagedSyncStatus>,
+        mut staged_sync_rx: mpsc::UnboundedReceiver<StagedSyncStatus>,
         eth_api: API,
     ) {
         let sync_sub_tx2 = self.sync_sub_tx.clone();

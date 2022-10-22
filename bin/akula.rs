@@ -227,7 +227,7 @@ fn main() -> anyhow::Result<()> {
                 let chain_config = ChainConfig::from(chainspec);
 
                 // Send StagedSyncStatus in callback to EthApiServer
-                let (staged_sync_tx, staged_sync_rx) = mpsc::channel(20);
+                let (staged_sync_tx, staged_sync_rx) = mpsc::unbounded_channel();
                 // Send SyncStatus to subscribers
                 let (sync_sub_tx, _) = broadcast::channel(100);
                 // Send Block to subscribers
@@ -399,7 +399,7 @@ fn main() -> anyhow::Result<()> {
 
                 let transmitter_callback =
                     move |sync_status: stagedsync::StagedSyncStatus| -> BoxFuture<'static, ()> {
-                        staged_sync_tx.blocking_send(sync_status).unwrap();
+                        staged_sync_tx.send(sync_status).unwrap();
                         Box::pin(async { () })
                     };
                 staged_sync.set_post_cycle_callback(transmitter_callback);
