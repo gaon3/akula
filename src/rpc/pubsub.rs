@@ -4,7 +4,7 @@ use ethereum_jsonrpc::{
     types, EthApiServer, EthSubscriptionKind, EthSubscriptionResult, PubsubApiServer, SyncStatus,
 };
 use jsonrpsee::{core::error::SubscriptionClosed, types::SubscriptionResult, SubscriptionSink};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, watch};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
 pub struct PubsubServerImpl {
@@ -14,30 +14,29 @@ pub struct PubsubServerImpl {
 impl PubsubServerImpl {
     pub fn run<API: EthApiServer>(
         &self,
-        mut staged_sync_rx: mpsc::UnboundedReceiver<StagedSyncStatus>,
+        mut staged_sync_rx: watch::Receiver<StagedSyncStatus>,
         eth_api: API,
     ) {
         let sync_sub_tx2 = self.sync_sub_tx.clone();
         let block_sub_tx2 = self.block_sub_tx.clone();
         tokio::spawn(async move {
-            while let Some(status) = staged_sync_rx.recv().await {
+            while staged_sync_rx.changed().await.is_ok() {
+                let status = staged_sync_rx.borrow().clone();
                 let current_block = status.minimum_progress.unwrap_or(BlockNumber(0));
                 let highest_block = status.maximum_progress.unwrap_or(BlockNumber(0));
                 // If node is synced, we also publish new blocks
                 if current_block > 0 && current_block >= highest_block {
-                    sync_sub_tx2.send(SyncStatus::NotSyncing).unwrap();
+                    let _ = sync_sub_tx2.send(SyncStatus::NotSyncing);
                     let header = eth_api
                         .get_block_by_number(current_block.0.into(), false)
                         .await
                         .unwrap();
                     block_sub_tx2.send(header).unwrap();
                 } else {
-                    sync_sub_tx2
-                        .send(SyncStatus::Syncing {
-                            highest_block: highest_block.0.into(),
-                            current_block: current_block.0.into(),
-                        })
-                        .unwrap();
+                    let _ = sync_sub_tx2.send(SyncStatus::Syncing {
+                        highest_block: highest_block.0.into(),
+                        current_block: current_block.0.into(),
+                    });
                 };
             }
         });

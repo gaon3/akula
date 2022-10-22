@@ -31,7 +31,7 @@ use std::{
     sync::Arc, time::Duration,
 };
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{broadcast, watch},
     time::sleep,
 };
 use tracing::*;
@@ -227,7 +227,12 @@ fn main() -> anyhow::Result<()> {
                 let chain_config = ChainConfig::from(chainspec);
 
                 // Send StagedSyncStatus in callback to EthApiServer
-                let (staged_sync_tx, staged_sync_rx) = mpsc::unbounded_channel();
+                let (staged_sync_tx, staged_sync_rx) =
+                    watch::channel(stagedsync::StagedSyncStatus {
+                        maximum_progress: None,
+                        minimum_progress: None,
+                        stage_execution_receipts: vec![],
+                    });
                 // Send SyncStatus to subscribers
                 let (sync_sub_tx, _) = broadcast::channel(100);
                 // Send Block to subscribers
@@ -399,7 +404,7 @@ fn main() -> anyhow::Result<()> {
 
                 let transmitter_callback =
                     move |sync_status: stagedsync::StagedSyncStatus| -> BoxFuture<'static, ()> {
-                        staged_sync_tx.send(sync_status).unwrap();
+                        let _ = staged_sync_tx.send(sync_status);
                         Box::pin(async { () })
                     };
                 staged_sync.set_post_cycle_callback(transmitter_callback);
