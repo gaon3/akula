@@ -9,7 +9,7 @@ use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
 pub struct PubsubServerImpl {
     pub sync_sub_tx: broadcast::Sender<SyncStatus>,
-    pub block_sub_tx: broadcast::Sender<Option<types::Block>>,
+    pub block_sub_tx: broadcast::Sender<types::Block>,
 }
 impl PubsubServerImpl {
     pub fn run<API: EthApiServer>(
@@ -27,11 +27,13 @@ impl PubsubServerImpl {
                 // If node is synced, we also publish new blocks
                 if current_block > 0 && current_block >= highest_block {
                     let _ = sync_sub_tx2.send(SyncStatus::NotSyncing);
-                    let header = eth_api
+                    let block = eth_api
                         .get_block_by_number(current_block.0.into(), false)
                         .await
                         .unwrap();
-                    let _ = block_sub_tx2.send(header);
+                    if let Some(head) = block {
+                        let _ = block_sub_tx2.send(head);
+                    }
                 } else {
                     let _ = sync_sub_tx2.send(SyncStatus::Syncing {
                         highest_block: highest_block.0.into(),

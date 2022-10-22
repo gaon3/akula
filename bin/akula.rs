@@ -404,7 +404,7 @@ fn main() -> anyhow::Result<()> {
 
                 let transmitter_callback =
                     move |sync_status: stagedsync::StagedSyncStatus| -> BoxFuture<'static, ()> {
-                        let _ = staged_sync_tx.send(sync_status).unwrap();
+                        let _ = staged_sync_tx.send(sync_status);
                         Box::pin(async { () })
                     };
                 staged_sync.set_post_cycle_callback(transmitter_callback);
